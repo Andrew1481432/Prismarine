@@ -3267,7 +3267,7 @@ class Player extends Human implements CommandSender, ChunkLoader, IPlayer{
 			$pk->address = $ev->getAddress();
 			$pk->port = $ev->getPort();
 			$this->directDataPacket($pk);
-			$this->close("", $ev->getMessage(), false);
+			//$this->close("", $ev->getMessage(), false); // TODO temporary comment
 
 			return true;
 		}

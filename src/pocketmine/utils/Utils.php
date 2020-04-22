@@ -27,6 +27,7 @@ declare(strict_types=1);
 
 namespace pocketmine\utils;
 
+use DaveRandom\CallbackValidator\CallbackType;
 use pocketmine\ThreadManager;
 
 /**
@@ -387,7 +388,7 @@ class Utils{
 	 */
 	public static function getURL(string $page, int $timeout = 10, array $extraHeaders = [], &$err = null, &$headers = null, &$httpCode = null){
 		try{
-			list($ret, $headers, $httpCode) = self::simpleCurl($page, $timeout, $extraHeaders);
+			[$ret, $headers, $httpCode] = self::simpleCurl($page, $timeout, $extraHeaders);
 			return $ret;
 		}catch(\RuntimeException $ex){
 			$err = $ex->getMessage();
@@ -411,7 +412,7 @@ class Utils{
 	 */
 	public static function postURL(string $page, $args, int $timeout = 10, array $extraHeaders = [], &$err = null, &$headers = null, &$httpCode = null){
 		try{
-			list($ret, $headers, $httpCode) = self::simpleCurl($page, $timeout, $extraHeaders, [
+			[$ret, $headers, $httpCode] = self::simpleCurl($page, $timeout, $extraHeaders, [
 				CURLOPT_POST => 1,
 				CURLOPT_POSTFIELDS => $args
 			]);
@@ -536,5 +537,72 @@ class Utils{
 		}
 
 		return proc_close($process);
+	}
+
+	/**
+	 * @param string $path
+	 *
+	 * @return string
+	 */
+	public static function cleanPath($path): string{
+		$result = str_replace(["\\", ".php", "phar://"], ["/", "", ""], $path);
+
+		//remove relative paths
+		//TODO: make these paths dynamic so they can be unit-tested against
+		static $cleanPaths = [
+			\pocketmine\PLUGIN_PATH => "plugins", //this has to come BEFORE \pocketmine\PATH because it's inside that by default on src installations
+			\pocketmine\PATH => ""
+		];
+		foreach($cleanPaths as $cleanPath => $replacement){
+			$cleanPath = rtrim(str_replace(["\\", "phar://"], ["/", ""], $cleanPath), "/");
+			if(strpos($result, $cleanPath) === 0){
+				$result = ltrim(str_replace($cleanPath, $replacement, $result), "/");
+			}
+		}
+		return $result;
+	}
+
+	/**
+	 * Returns a readable identifier for the given Closure, including file and line.
+	 *
+	 * @param \Closure $closure
+	 *
+	 * @return string
+	 * @throws \ReflectionException
+	 */
+	public static function getNiceClosureName(\Closure $closure) : string{
+		$func = new \ReflectionFunction($closure);
+		if(substr($func->getName(), -strlen('{closure}')) !== '{closure}'){
+			//closure wraps a named function, can be done with reflection or fromCallable()
+			//isClosure() is useless here because it just tells us if $func is reflecting a Closure object
+
+			$scope = $func->getClosureScopeClass();
+			if($scope !== null){ //class method
+				return
+					$scope->getName() .
+					($func->getClosureThis() !== null ? "->" : "::") .
+					$func->getName(); //name doesn't include class in this case
+			}
+
+			//non-class function
+			return $func->getName();
+		}
+		return "closure@" . self::cleanPath($func->getFileName()) . "#L" . $func->getStartLine();
+	}
+
+	/**
+	 * Verifies that the given callable is compatible with the desired signature. Throws a TypeError if they are
+	 * incompatible.
+	 *
+	 * @param callable $signature Dummy callable with the required parameters and return type
+	 * @param callable $subject Callable to check the signature of
+	 *
+	 * @throws \DaveRandom\CallbackValidator\InvalidCallbackException
+	 * @throws \TypeError
+	 */
+	public static function validateCallableSignature(callable $signature, callable $subject) : void{
+		if(!($sigType = CallbackType::createFromCallable($signature))->isSatisfiedBy($subject)){
+			throw new \TypeError("Declaration of callable `" . CallbackType::createFromCallable($subject) . "` must be compatible with `" . $sigType . "`");
+		}
 	}
 }
